@@ -21,7 +21,11 @@ library(tidyverse)
 ```
 
 ```{r load_data}
-
+selfCompare <- read_csv("./selfCompare.csv")
+test <- selfCompare %>% fill(c(season, gender)) %>%
+  pivot_longer(4:10, values_to="inspiration") %>% select(-c(name)) %>%
+  filter(!is.na(inspiration))
+View(test)
 ```
 
 ## Data Wrangling
