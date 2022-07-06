@@ -23,9 +23,8 @@ library(survivoR)
 
 ```{r load_data}
 selfCompare <- read_csv("./selfCompare.csv", show_col_types = FALSE) %>% 
-  fill(c(season, gender)) %>%
-  pivot_longer(4:10, values_to="inspiration") %>% 
-  select(-c(name)) %>%
+  select(-c(gender)) %>% fill(season) %>%
+  pivot_longer(3:9, values_to="inspiration") %>% select(-c(name)) %>%
   filter(!is.na(inspiration)) %>%
   separate(inspiration, into = c('inspFirst', 'inspLast'),
            sep=" ", extra="merge", remove=FALSE)
@@ -37,18 +36,18 @@ selfCompare <- read_csv("./selfCompare.csv", show_col_types = FALSE) %>%
 fullNames <- castaway_details %>% 
   merge((castaways %>% select(c(castaway_id, version_season))), 
         by="castaway_id") %>%
-  mutate(version_season = substr(version_season,3,4),
-         full_name = case_when(
-           castaway_id == "US0281" ~ "JT Thomas", TRUE ~ full_name)) %>%
-  filter(version_season > 20) %>%
+  mutate(full_name = case_when(
+    castaway_id == "US0281" ~ "JT Thomas", 
+    castaway_id == "US0029" ~ "Elisabeth Hasselbeck",
+    TRUE ~ full_name)) %>%
   separate(full_name, into = c('first','last'), 
     sep = " ", extra = "merge", remove = FALSE) %>%
   mutate(name = case_when(
     str_detect(full_name,short_name) ~ str_c(first, ' ', last),
     TRUE ~ str_c(first, ' "', short_name, '" ', last))) %>%
   select(castaway_id, full_name, first, short_name, last) %>%
-  left_join((selfCompare %>% select(c(inspiration, inspFirst, inspLast))),
-        by=c("last"="inspLast")) %>% unique() %>%
+  merge((selfCompare %>% select(c(inspiration, inspFirst, inspLast))),
+        by.x="last", by.y="inspLast", all=TRUE) %>% unique() %>%
   mutate(inspiration = case_when(
     !is.na(inspiration) ~ inspiration,
     str_detect(short_name, first) ~ full_name,
@@ -65,7 +64,17 @@ fullNames <- castaway_details %>%
     TRUE ~ str_c(short_name, last, sep=" "))) %>%
   rename(shortName = short_name) %>%
   left_join(castaways, by="castaway_id") %>% unique() %>%
-  select(version_season, castaway_id, first, shortName, last, fullName)
+  mutate(season = substr(version_season,3,4)) %>%
+  select(season, castaway_id, first, shortName, last, fullName)
+
+selfCompare <- selfCompare %>% select(-c(inspFirst, inspLast)) %>% 
+  mutate(season = substr(season,8,9)) %>%
+  left_join(fullNames,  by=c("season"="season", "castaway"="shortName")) %>%
+  rename(cast_name = fullName, cast_id = castaway_id) %>%
+  select(cast_id, cast_name, inspiration) %>%
+  left_join(fullNames, by=c("inspiration"="fullName")) %>%
+  rename(inspo_name = inspiration, inspo_id = castaway_id) %>%
+  select(cast_id, cast_name, inspo_id, inspo_name) %>% unique()
 ```
 
 ## Data Visualization
