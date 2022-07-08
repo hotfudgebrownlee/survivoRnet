@@ -32,7 +32,7 @@ selfCompare <- read_csv("./selfCompare.csv", show_col_types = FALSE) %>%
 
 ## Data Wrangling
 
-```{r tidy_data}
+```{r tidy_people}
 fullNames <- castaway_details %>% 
   merge((castaways %>% select(c(castaway_id, version_season))), 
         by="castaway_id") %>%
@@ -75,10 +75,47 @@ selfCompare <- selfCompare %>% select(-c(inspFirst, inspLast)) %>%
   left_join(fullNames, by=c("inspiration"="fullName")) %>%
   rename(inspo_name = inspiration, inspo_id = castaway_id) %>%
   select(cast_id, cast_name, inspo_id, inspo_name) %>% unique()
+
+edges <- selfCompare %>% select(cast_id, inspo_id) %>%
+  rename(from = cast_id, to = inspo_id)
+
+nSize <- selfCompare %>% select(inspo_id, inspo_name) %>%
+  group_by(inspo_id) %>% mutate(count = n()) %>%
+  select(inspo_id, count) %>% unique() %>% filter(count > 1)
+
+nodes <- selfCompare %>%
+  pivot_longer(everything(), names_to= c("type", "name"), names_sep="_") %>%
+  mutate(type = 1:(nrow(selfCompare)*4), type = case_when(
+    type %% 2 == 0 ~ type / 2,
+    TRUE ~ as.double(NA))) %>% fill(type, .direction="up") %>%
+  pivot_wider(id_cols="type", names_from="name", values_from="value") %>%
+  select(-c(type)) %>% unique() %>%
+  left_join(nSize, by=c("id"="inspo_id")) %>%
+  mutate(count = case_when(is.na(count) ~ 0.5, TRUE ~ as.double(count)),
+         scaled = log(count+1)*2)
+```
+
+``` {r add_details}
+# number of days played, number of seasons played, recency (last 5 seasons),
+# number of inspirations, top 10 seasons, gender
+# topSzns <- viewers %>% 
+#   select(season, viewers, rating_18_49, share_18_49, imdb_rating)
 ```
 
 ## Data Visualization
 
 ```{r plot_data}
-
+net <- graph_from_data_frame(
+  d = edges, vertices = nodes, directed = T
+)
+net <- igraph::simplify(
+  net, remove.multiple=F, remove.loops=T
+)
+plot(net, 
+     edge.arrow.size=0, 
+     edge.size=0.01,
+     vertex.label=NA,
+     # vertex.size=V(net)$scaled,
+     vertex.size=3,
+     layout=layout_on_sphere(net))
 ```
