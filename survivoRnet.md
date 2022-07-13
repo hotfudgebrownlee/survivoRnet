@@ -12,33 +12,24 @@ output:
     fig_align: 'center'
 ---
 
-```{r, echo=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
-```
 
-```{r load_libraries, include=FALSE}
-library(tidyverse)
-library(survivoR)
-library(igraph)
-```
 
-```{r load_data}
-# self-comparisons
+
+
+
+```r
 selfCompare <- read_csv("./selfCompare.csv", show_col_types = FALSE) %>% 
   select(-c(gender)) %>% fill(season) %>%
   pivot_longer(3:9, values_to="inspiration") %>% select(-c(name)) %>%
   filter(!is.na(inspiration)) %>%
   separate(inspiration, into = c('inspFirst', 'inspLast'),
            sep=" ", extra="merge", remove=FALSE)
-
-# top seasons from reddit
-reddit <- read_csv("./season_census.csv", show_col_types = FALSE) %>%
-  mutate(season = str_c("US",sprintf("%02d",season)))
 ```
 
 ## Data Wrangling
 
-```{r tidy_names}
+
+```r
 fullNames <- castaway_details %>% 
   merge((castaways %>% select(c(castaway_id, version_season))), 
         by="castaway_id") %>%
@@ -72,44 +63,19 @@ fullNames <- castaway_details %>%
   left_join(castaways, by="castaway_id") %>% unique() %>%
   mutate(season = substr(version_season,3,4)) %>%
   select(season, castaway_id, first, shortName, last, fullName)
+
+selfCompare <- selfCompare %>% select(-c(inspFirst, inspLast)) %>% 
+  mutate(season = substr(season,8,9)) %>%
+  left_join(fullNames,  by=c("season"="season", "castaway"="shortName")) %>%
+  rename(cast_name = fullName, cast_id = castaway_id) %>%
+  select(cast_id, cast_name, inspiration) %>%
+  left_join(fullNames, by=c("inspiration"="fullName")) %>%
+  rename(inspo_name = inspiration, inspo_id = castaway_id) %>%
+  select(cast_id, cast_name, inspo_id, inspo_name) %>% unique()
 ```
 
-``` {r top10_seasons}
-# top seasons from github data
-topSzns <- tribe_mapping %>% 
-  select(version_season, episode, day, tribe_status) %>%
-  unique() %>% group_by(version_season) %>% mutate(premier = min(episode)) %>%
-  filter(tribe_status == "Merged") %>% mutate(merge = min(episode)) %>%
-  filter(day == max(day)) %>% mutate(finale = max(episode)) %>%
-  select(version_season, premier, merge, finale) %>% unique() %>%
-  merge((viewers %>% select(version_season, episode, imdb_rating)),
-        by = "version_season") %>% group_by(version_season) %>%
-  filter(episode == merge | episode == finale | episode == premier) %>%
-  select(version_season, episode, imdb_rating) %>%
-  summarise(pmf_imdb = mean(imdb_rating, na.rm=TRUE)) %>%
-  merge((viewers %>% select(version_season, viewers, imdb_rating)),
-        by = "version_season") %>% group_by(version_season) %>%
-  mutate(tot_viewers = sum(viewers, na.rm=TRUE), 
-            avg_imdb = mean(imdb_rating, na.rm=TRUE)) %>%
-  select(-c(viewers, imdb_rating)) %>% unique()
 
-# most common seasons across 4 categories:
-# total viewers, imdb ratings, premier/merge/finale ratings, reddit ratings
-top10s <- tibble((topSzns %>% arrange(desc(tot_viewers)) %>% head(10) %>% 
-                  select(version_season) %>% rename(viewers = version_season)),
-                (topSzns %>% arrange(desc(pmf_imdb)) %>% head(10) %>% 
-                  select(version_season) %>% rename(pmf = version_season)),
-                (topSzns %>% arrange(desc(avg_imdb)) %>% head(10) %>% 
-                  select(version_season) %>% rename(imdb = version_season)),
-                (reddit %>% arrange(desc(percent)) %>% head(10) %>%
-                   select(season) %>% rename(reddit = season))) %>%
-  pivot_longer(everything(), names_to="source", values_to="season") %>%
-  group_by(season) %>% summarise(count = n()) %>% arrange(desc(count)) %>%
-  filter(count > 1) %>% head(10) %>% select(season)
-```
-
-``` {r placement_details}
-# total seasons, total days, highest placement, average placement
+```r
 stats <- castaways %>% 
   select(version_season, castaway_id, full_name, day, order, jury_status) %>%
   group_by(version_season) %>% mutate(order = max(order) + 1 - order) %>%
@@ -123,24 +89,17 @@ stats <- castaways %>%
   ungroup() %>% group_by(castaway_id) %>% 
   mutate(total_seasons=n(), total_days=sum(day), 
          best_place=min(order), avg_place=round(mean(order),2)) %>%
-  ungroup() %>% select(-c(day, order, version_season, full_name)) %>% unique()
+  ungroup() %>% select(-c(day, order, version_season))
+  
+
+# recency (last 5 seasons),
+# number of inspirations, top 10 seasons, gender
+# topSzns <- viewers %>% 
+#   select(season, viewers, rating_18_49, share_18_49, imdb_rating)
 ```
 
-``` {r comparisons}
-# gender comparison, last 5 seasons, number of comparisons, link tree
-selfCompare <- selfCompare %>% select(-c(inspFirst, inspLast)) %>% 
-  mutate(season = substr(season,8,9)) %>%
-  left_join(fullNames,  by=c("season"="season", "castaway"="shortName")) %>%
-  rename(cast_name = fullName, cast_id = castaway_id) %>%
-  select(cast_id, cast_name, inspiration) %>%
-  left_join(fullNames, by=c("inspiration"="fullName")) %>%
-  rename(inspo_name = inspiration, inspo_id = castaway_id) %>%
-  select(cast_id, cast_name, inspo_id, inspo_name) %>% unique()
 
-View(selfCompare)
-```
-
-``` {r prepare_network}
+```r
 edges <- selfCompare %>% select(cast_id, inspo_id) %>%
   rename(from = cast_id, to = inspo_id)
 
@@ -162,7 +121,8 @@ nodes <- selfCompare %>%
 
 ## Data Visualization
 
-```{r plot_data}
+
+```r
 net <- graph_from_data_frame(
   d = edges, vertices = nodes, directed = T
 )
@@ -180,3 +140,5 @@ plot(net,
      # vertex.size=3,
      layout=layout_as_tree(net))
 ```
+
+![](survivoRnet_files/figure-html/plot_data-1.png)<!-- -->
