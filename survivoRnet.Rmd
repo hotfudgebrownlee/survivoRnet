@@ -127,8 +127,8 @@ stats <- castaways %>%
 ```
 
 ``` {r comparisons}
-# gender comparison, last 5 seasons, number of comparisons, link tree
-selfCompare <- selfCompare %>% select(-c(inspFirst, inspLast)) %>% 
+# gender comparison, last 5 seasons, number of comparisons
+comparisons <- selfCompare %>% select(-c(inspFirst, inspLast)) %>% 
   mutate(season = substr(season,8,9)) %>%
   left_join(fullNames,  by=c("season"="season", "castaway"="shortName")) %>%
   rename(cast_name = fullName, cast_id = castaway_id) %>%
@@ -137,20 +137,50 @@ selfCompare <- selfCompare %>% select(-c(inspFirst, inspLast)) %>%
   rename(inspo_name = inspiration, inspo_id = castaway_id) %>%
   select(cast_id, cast_name, inspo_id, inspo_name) %>% unique()
 
-View(selfCompare)
+details <- castaway_details %>% 
+  mutate(gender = case_when(
+    castaway_id == "US0598" ~ "Female", TRUE ~ gender
+  )) %>% select(castaway_id, gender) %>%
+  merge((castaways %>% select(castaway_id, season)), by="castaway_id")
+
+comp_detes <- comparisons %>%
+  group_by(inspo_id) %>% mutate(count = n()) %>% ungroup() %>%
+  merge(details, by.x = "cast_id", by.y = "castaway_id") %>%
+  rename(c_szn = season, c_gender = gender) %>% group_by(cast_id) %>% 
+  mutate(c_szn = min(c_szn)) %>% unique() %>% ungroup() %>% 
+  merge(details, by.x = "inspo_id", by.y = "castaway_id") %>%
+  rename(i_szn = season, i_gender = gender) %>% group_by(inspo_id, cast_id) %>% 
+  mutate(i_szn = max(i_szn[i_szn < c_szn]),
+         past5 = case_when(c_szn - i_szn <= 5 ~ TRUE, TRUE ~ FALSE),
+         gender = case_when(c_gender == i_gender ~ TRUE, TRUE ~ FALSE)) %>%
+  select(cast_id, inspo_id, count, past5, gender) %>% unique() %>% ungroup()
+```
+
+``` {r unlinked}
+unlinked <- comparisons %>% 
+  group_by(inspo_id) %>% mutate(i_pop = n()) %>% ungroup() %>%
+  group_by(cast_id) %>% mutate(c_pop = n()) %>%
+  mutate(unpopular = (c_pop == sum(i_pop)),
+         inspo_cast = (inspo_id %in% comparisons$cast_id),
+         cast_inspo = (cast_id %in% comparisons$inspo_id)) %>%
+  filter(unpopular & !inspo_cast & !cast_inspo) %>% select(1:4)
+```
+
+``` {r link_tree}
+link_tree <- comparisons %>% filter(!(inspo_id %in% unlinked$inspo_id))
 ```
 
 ``` {r prepare_network}
-edges <- selfCompare %>% select(cast_id, inspo_id) %>%
+edges <- link_tree %>% select(cast_id, inspo_id) %>%
   rename(from = cast_id, to = inspo_id)
 
-nSize <- selfCompare %>% select(inspo_id, inspo_name) %>%
+nSize <- link_tree %>% select(inspo_id, inspo_name) %>%
   group_by(inspo_id) %>% mutate(count = n()) %>%
   select(inspo_id, count) %>% unique() %>% filter(count > 1)
 
-nodes <- selfCompare %>%
+nodes <- link_tree %>%
   pivot_longer(everything(), names_to= c("type", "name"), names_sep="_") %>%
-  mutate(type = 1:(nrow(selfCompare)*4), type = case_when(
+  mutate(type = 1:(nrow(link_tree)*4), type = case_when(
     type %% 2 == 0 ~ type / 2,
     TRUE ~ as.double(NA))) %>% fill(type, .direction="up") %>%
   pivot_wider(id_cols="type", names_from="name", values_from="value") %>%
@@ -169,14 +199,13 @@ net <- graph_from_data_frame(
 net <- igraph::simplify(
   net, remove.multiple=F, remove.loops=T
 )
-# layout_nicely(net), layout_with_dh(net), layout_with_gem(net),
-# layout_with_graphopt(net), layout_with_kk(net), 
-# layout_with_lgl(net), layout_with_mds(net)
+# layout_nicely(net), layout_with_dh(net),
+# layout_with_gem(net), layout_with_kk(net)
 plot(net, 
      edge.arrow.size=0, 
      edge.size=0.01,
      vertex.label=NA,
      vertex.size=V(net)$scaled,
      # vertex.size=3,
-     layout=layout_as_tree(net))
+     layout=layout_with_kk(net))
 ```
