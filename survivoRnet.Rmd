@@ -153,7 +153,8 @@ comp_detes <- comparisons %>%
   mutate(i_szn = max(i_szn[i_szn < c_szn]),
          past5 = case_when(c_szn - i_szn <= 5 ~ TRUE, TRUE ~ FALSE),
          gender = case_when(c_gender == i_gender ~ TRUE, TRUE ~ FALSE)) %>%
-  select(cast_id, inspo_id, count, past5, gender) %>% unique() %>% ungroup()
+  select(cast_id, inspo_id, inspo_name, count, past5, gender) %>% 
+  unique() %>% ungroup()
 ```
 
 ``` {r unlinked}
@@ -167,20 +168,39 @@ unlinked <- comparisons %>%
 ```
 
 ``` {r link_tree}
-link_tree <- comparisons %>% filter(!(inspo_id %in% unlinked$inspo_id))
+net_df <- comparisons %>% filter(!(inspo_id %in% unlinked$inspo_id))
+
+link_tree <- net_df %>% 
+  rename(id0 = cast_id, name0 = cast_name, 
+         id1 = inspo_id, name1 = inspo_name) %>%
+  left_join((net_df %>% select(-c(cast_name))), by=c("id1" = "cast_id")) %>% 
+  rename(id2 = inspo_id, name2 = inspo_name) %>%
+  left_join((net_df %>% select(-c(cast_name))), by=c("id2" = "cast_id")) %>%
+  rename(id3 = inspo_id, name3 = inspo_name) %>%
+  left_join((net_df %>% select(-c(cast_name))), by=c("id3" = "cast_id")) %>%
+  rename(id4 = inspo_id, name4 = inspo_name) %>%
+  left_join((net_df %>% select(-c(cast_name))), by=c("id4" = "cast_id")) %>%
+  rename(id5 = inspo_id, name5 = inspo_name) %>%
+  mutate(root = case_when(!is.na(id5) ~ id5, !is.na(id4) ~ id4,
+       !is.na(id3) ~ id3, !is.na(id2) ~ id2, TRUE ~ id1)) %>%
+  left_join((fullNames %>% select(c(castaway_id, fullName)) %>% unique()),
+            by=c("root" = "castaway_id")) %>% unique()
+
+x%>% 
+  select(root, fullName, root_count) %>% unique()
 ```
 
 ``` {r prepare_network}
-edges <- link_tree %>% select(cast_id, inspo_id) %>%
+edges <- net_df %>% select(cast_id, inspo_id) %>%
   rename(from = cast_id, to = inspo_id)
 
-nSize <- link_tree %>% select(inspo_id, inspo_name) %>%
+nSize <- net_df %>% select(inspo_id, inspo_name) %>%
   group_by(inspo_id) %>% mutate(count = n()) %>%
   select(inspo_id, count) %>% unique() %>% filter(count > 1)
 
-nodes <- link_tree %>%
+nodes <- net_df %>%
   pivot_longer(everything(), names_to= c("type", "name"), names_sep="_") %>%
-  mutate(type = 1:(nrow(link_tree)*4), type = case_when(
+  mutate(type = 1:(nrow(net_df)*4), type = case_when(
     type %% 2 == 0 ~ type / 2,
     TRUE ~ as.double(NA))) %>% fill(type, .direction="up") %>%
   pivot_wider(id_cols="type", names_from="name", values_from="value") %>%
